@@ -61,6 +61,7 @@ const WIDGETS = [
   { id: 'w_projects', name: 'Projects', icon: 'GitBranch', color: '#fb923c', blurb: 'Your git projects, newest first' },
   { id: 'w_recent', name: 'Recent', icon: 'History', color: '#f472b6', blurb: 'Files you opened lately' },
   { id: 'w_clock', name: 'Clock', icon: 'Clock', color: '#a78bfa', blurb: 'Time, date and weather' },
+  { id: 'w_capture', name: 'Screen capture', icon: 'Camera', color: '#38bdf8', blurb: 'Snip tool, color picker and recent screenshots' },
 ];
 
 let onClean = null;
@@ -345,6 +346,13 @@ function createMock() {
     procEnd: async (keys) => ({ ok: true, ended: 196, freed: 10.65 * 1024 ** 3 }),
     runAsAdmin: async () => null,
     closeApp: async () => ({ ok: true }),
+    triggerSnip: async () => ({ ok: true }),
+    recentScreenshots: async () => [
+      { path: 'C:\\Users\\you\\Pictures\\Screenshots\\Screenshot (1).png', name: 'Screenshot (1).png', mtime: Date.now() - 3600000, size: 280000, thumb: null },
+      { path: 'C:\\Users\\you\\Pictures\\Screenshots\\Screenshot (2).png', name: 'Screenshot (2).png', mtime: Date.now() - 7200000, size: 310000, thumb: null },
+      { path: 'C:\\Users\\you\\Pictures\\Screenshots\\Screenshot (3).png', name: 'Screenshot (3).png', mtime: Date.now() - 10800000, size: 240000, thumb: null },
+    ],
+    copyScreenshot: async () => ({ ok: true }),
     peekFolder: async () => true,
     peekHide: async () => {},
     startDrag: () => {},

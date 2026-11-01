@@ -23,7 +23,7 @@ const DEFAULTS = {
     autoSort: false,     // move brand-new shortcuts into category folders
     background: true,    // closing the window keeps Deskly running in the tray (hotkey, panels)
     scene: null,         // active scene id, or null for "no scene"
-    widgets: { w_sys: true, w_dev: true, w_projects: false, w_recent: false, w_clock: false },
+    widgets: { w_sys: true, w_dev: true, w_projects: false, w_recent: false, w_clock: false, w_capture: false },
     searchHotkey: 'Alt+Space',
     smartQuick: true,         // Quick access also learns what you use at this time of day
     alerts: { ram: true, disk: true, servers: true, leftovers: true, weekly: true },

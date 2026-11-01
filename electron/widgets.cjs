@@ -6,6 +6,7 @@ const WIDGETS = [
   { id: 'w_projects', name: 'Projects', icon: 'GitBranch', color: '#fb923c', w: 344, h: 396, blurb: 'Your git projects, newest first' },
   { id: 'w_recent', name: 'Recent', icon: 'History', color: '#f472b6', w: 324, h: 360, blurb: 'Files you opened lately' },
   { id: 'w_clock', name: 'Clock', icon: 'Clock', color: '#a78bfa', w: 264, h: 204, blurb: 'Time, date and weather' },
+  { id: 'w_capture', name: 'Screen capture', icon: 'Camera', color: '#38bdf8', w: 340, h: 280, blurb: 'Snip tool, color picker and recent screenshots' },
 ];
 
 const byId = Object.fromEntries(WIDGETS.map((w) => [w.id, w]));

@@ -573,9 +573,38 @@ async function thumb(id) {
   }
 }
 
+async function getRecentScreenshots(limit = 6) {
+  const d = dirs();
+  const home = path.join(d.pictures, 'Screenshots');
+  const sources = [home, d.desktop, d.pictures, d.downloads];
+  const found = [];
+  const seenPaths = new Set();
+  for (const dir of sources) {
+    for (const f of await topFiles(dir)) {
+      if (!isShot(f.name) || seenPaths.has(f.path)) continue;
+      seenPaths.add(f.path);
+      found.push(f);
+    }
+  }
+  found.sort((a, b) => b.mtime - a.mtime);
+  const picks = found.slice(0, limit);
+  const out = [];
+  for (const p of picks) {
+    let t = null;
+    try {
+      if (nativeImage) {
+        const img = await nativeImage.createThumbnailFromPath(p.path, { width: 160, height: 100 });
+        if (!img.isEmpty()) t = img.toDataURL();
+      }
+    } catch {}
+    out.push({ path: p.path, name: p.name, mtime: p.mtime, size: p.size, thumb: t });
+  }
+  return out;
+}
+
 module.exports = {
   downloadsPlan, screenshotsPlan, applyGroups, applyMoves, undoMoves, history,
-  scanBig, scanDupes, cancel, trash, revealId, thumb,
+  scanBig, scanDupes, cancel, trash, revealId, thumb, getRecentScreenshots,
   // exposed for tests
   _isShot: isShot,
   _classify: (ext) => (EXT_GROUP.get(ext) || { id: 'other' }).id,

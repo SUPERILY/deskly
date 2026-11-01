@@ -157,9 +157,11 @@ function createPanels({ preload, loadPanel, getStore, save, onAutoCollapse, getD
       flow(others, a.x + 12, 1, out);
     } else if (layout === 'center') {
       out[hub.id] = { x: a.x + Math.round((a.width - hd.w) / 2), y: a.y + 12 };
-      const half = Math.ceil(others.length / 2);
-      flow(others.slice(0, half), a.x + 12, 1, out);
-      flow(others.slice(half), right, -1, out);
+      const leftIds = new Set(['w_clock', 'w_sys', 'w_recent']);
+      const leftOthers = others.filter((s) => leftIds.has(s.id));
+      const rightOthers = others.filter((s) => !leftIds.has(s.id));
+      flow(leftOthers.length ? leftOthers : others.slice(0, Math.ceil(others.length / 2)), a.x + 12, 1, out);
+      flow(leftOthers.length ? rightOthers : others.slice(Math.ceil(others.length / 2)), right, -1, out);
     } else {
       out[hub.id] = { x: a.x + 12, y: a.y + 12 };
       // widgets flow from the right edge inwards

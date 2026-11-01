@@ -19,7 +19,7 @@ const SECTIONS = [
 
 const HEX = /^#[0-9a-f]{6}$/i;
 const ID = /^[\w\-.:]{1,60}$/;
-const WIDGET_IDS = ['w_sys', 'w_dev', 'w_projects', 'w_recent', 'w_clock'];
+const WIDGET_IDS = ['w_sys', 'w_dev', 'w_projects', 'w_recent', 'w_clock', 'w_capture'];
 const str = (v, n) => String(v == null ? '' : v).slice(0, n);
 const bool = (v) => v === true || v === false;
 const num = (v, lo, hi) => typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi;
@@ -260,4 +260,4 @@ function apply(store, doc, sectionIds) {
   return done;
 }
 
-module.exports = { SECTIONS, FORMAT, MAX_BYTES, build, parse, apply };
+module.exports = { SECTIONS, FORMAT, MAX_BYTES, build, parse, apply, _cleanPrefs: cleanPrefs };

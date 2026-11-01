@@ -68,6 +68,15 @@ html.panel-root, html.panel-root body, html.panel-root #root { background: trans
 .w-sub.err { color: #fda4af; white-space: normal; }
 
 .w-sys { display: grid; gap: 11px; }
+.w-gauges-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding-bottom: 6px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
+.w-gauge { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.w-gauge-ring { position: relative; width: 48px; height: 48px; }
+.w-gauge-svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.w-gauge-bg { stroke: rgba(255, 255, 255, 0.08); }
+.w-gauge-val-text { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.w-gauge-val-text small { font-size: 8.5px; opacity: 0.7; font-weight: 500; }
+.w-gauge-lbl { font-size: 10px; font-weight: 600; color: rgba(255, 255, 255, 0.5); text-transform: uppercase; letter-spacing: 0.03em; }
+
 .w-row { display: grid; gap: 5px; }
 .w-head { display: flex; align-items: center; gap: 7px; font-size: 12px; color: rgba(255, 255, 255, 0.6); }
 .w-head span { flex: 1; font-weight: 600; letter-spacing: 0.02em; }
@@ -103,11 +112,49 @@ html.panel-root, html.panel-root body, html.panel-root #root { background: trans
 .recent-text small { font-size: 10.5px; color: rgba(255, 255, 255, 0.4); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .w-clock { display: grid; place-content: center; justify-items: center; gap: 4px; height: 100%; padding-bottom: 6px; }
-.clock-time { font-size: 50px; line-height: 1; font-weight: 700; letter-spacing: -0.03em; font-variant-numeric: tabular-nums;
+.clock-time { font-size: 42px; line-height: 1; font-weight: 700; letter-spacing: -0.03em; font-variant-numeric: tabular-nums;
   background: linear-gradient(120deg, #fff, color-mix(in srgb, var(--c) 70%, #fff)); -webkit-background-clip: text; background-clip: text; color: transparent; }
-.clock-date { font-size: 12.5px; color: rgba(255, 255, 255, 0.6); }
-.clock-weather { display: flex; align-items: center; gap: 8px; margin-top: 8px; padding: 5px 12px; border-radius: 99px; background: rgba(255, 255, 255, 0.07); font-size: 12.5px; color: rgba(255, 255, 255, 0.75); }
-.clock-weather strong { color: #fff; font-size: 14px; }
+.clock-date { font-size: 11.5px; color: rgba(255, 255, 255, 0.6); }
+
+/* Ambient Media strip */
+.clock-ambient { display: flex; align-items: center; gap: 8px; width: 100%; margin-top: 8px; padding: 6px 10px; border-radius: 12px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.08); }
+.ambient-ico { color: #a78bfa; flex: none; display: grid; place-items: center; }
+.ambient-meta { flex: 1; min-width: 0; display: grid; gap: 1px; text-align: left; }
+.ambient-meta strong { font-size: 11.5px; color: #f3f4fb; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ambient-meta small { font-size: 9.5px; color: rgba(255, 255, 255, 0.45); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ambient-controls { display: flex; align-items: center; gap: 2px; }
+.amb-btn { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; color: rgba(255, 255, 255, 0.6); transition: all 0.15s; }
+.amb-btn:hover { color: #fff; background: rgba(255, 255, 255, 0.12); }
+.amb-btn.play { color: #fff; background: rgba(255, 255, 255, 0.15); border-radius: 50%; }
+
+/* Screen capture widget */
+.w-capture { display: grid; gap: 10px; }
+.capture-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.cap-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; height: 52px; padding: 4px; border-radius: 12px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.08); color: rgba(255, 255, 255, 0.85); font-size: 10.5px; font-weight: 600; transition: all 0.18s; }
+.cap-btn:hover { background: rgba(255, 255, 255, 0.12); border-color: rgba(255, 255, 255, 0.18); color: #fff; transform: translateY(-1px); }
+.cap-btn.primary { background: rgba(56, 189, 248, 0.14); border-color: rgba(56, 189, 248, 0.3); color: #38bdf8; }
+.cap-btn.primary:hover { background: rgba(56, 189, 248, 0.25); color: #fff; }
+
+.capture-reel { display: grid; gap: 6px; }
+.capture-reel-head { display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: rgba(255, 255, 255, 0.5); font-weight: 600; }
+.cap-link { font-size: 10.5px; color: #38bdf8; font-weight: 500; }
+.cap-link:hover { text-decoration: underline; }
+.cap-empty { font-size: 11px; color: rgba(255, 255, 255, 0.35); text-align: center; padding: 12px 6px; line-height: 1.4; }
+.cap-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+.cap-thumb-card { position: relative; border-radius: 10px; overflow: hidden; aspect-ratio: 16/10; background: rgba(0, 0, 0, 0.4); border: 1px solid rgba(255, 255, 255, 0.1); cursor: pointer; transition: transform 0.18s, border-color 0.18s; }
+.cap-thumb-card:hover { transform: scale(1.02); border-color: rgba(56, 189, 248, 0.5); }
+.cap-img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cap-placeholder { width: 100%; height: 100%; display: grid; place-items: center; color: rgba(255, 255, 255, 0.3); }
+.cap-overlay { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.55); opacity: 0; display: grid; place-items: center; transition: opacity 0.15s; }
+.cap-thumb-card:hover .cap-overlay { opacity: 1; }
+.cap-tag { display: inline-flex; align-items: center; gap: 3px; padding: 3px 8px; border-radius: 99px; font-size: 10px; font-weight: 700; background: rgba(255, 255, 255, 0.2); color: #fff; }
+.cap-tag.copied { background: #10b981; }
+
+/* Filter bar for all apps */
+.p-filter-bar { display: flex; align-items: center; gap: 6px; padding: 4px 10px; margin-bottom: 8px; border-radius: 10px; background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(255, 255, 255, 0.1); }
+.p-filter-ico { color: rgba(255, 255, 255, 0.4); flex: none; }
+.p-filter-input { flex: 1; min-width: 0; background: transparent; border: none; outline: none; font-size: 11.5px; color: #fff; }
+.p-filter-input::placeholder { color: rgba(255, 255, 255, 0.35); }
 
 /* ---------- densities (sizes match electron/panels.cjs DENS) ---------- */
 .d-compact .p-grid { grid-template-columns: repeat(var(--cols), 72px); }

@@ -89,7 +89,10 @@ contextBridge.exposeInMainWorld('deskly', {
   toggleSearch: () => call('toggleSearch'),
   dockData: () => call('dockData'),
 
-  // library, scenes, performance, search
+  // library, scenes, performance, search, capture
+  triggerSnip: () => call('triggerSnip'),
+  recentScreenshots: (limit) => call('recentScreenshots', limit),
+  copyScreenshot: (p) => call('copyScreenshot', p),
   getLibrary: (force) => call('getLibrary', !!force),
   getRecent: () => call('getRecent'),
   pinLib: (key, on) => call('pinLib', key, !!on),

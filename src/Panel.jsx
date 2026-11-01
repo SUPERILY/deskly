@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowUpRight, ChevronDown, ChevronUp, FolderOpen, ShieldCheck, Power, Eye } from 'lucide-react';
+import { ArrowUpRight, ChevronDown, ChevronUp, FolderOpen, ShieldCheck, Power, Eye, Search } from 'lucide-react';
 import { api } from './api.js';
 import { CatIcon } from './icons.jsx';
-import { SysWidget, DevWidget, ProjectsWidget, RecentWidget, ClockWidget } from './widgets/Widgets.jsx';
+import { SysWidget, DevWidget, ProjectsWidget, RecentWidget, ClockWidget, CaptureWidget } from './widgets/Widgets.jsx';
 
-const WIDGET_PAGE = { w_sys: 'performance', w_dev: 'performance', w_projects: 'apps', w_recent: 'apps', w_clock: 'scenes' };
+const WIDGET_PAGE = { w_sys: 'performance', w_dev: 'performance', w_projects: 'apps', w_recent: 'apps', w_clock: 'scenes', w_capture: 'filetools' };
 
 const byName = (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
 
@@ -29,6 +29,8 @@ export default function Panel({ catId }) {
   const [running, setRunning] = useState(new Set());
   const [launching, setLaunching] = useState(null);
   const [tab, setTab] = useState(() => lsGet('deskly.hubTab'));
+  const [lib, setLib] = useState(null);
+  const [q, setQ] = useState('');
   const dragging = useRef(false);
   const raf = useRef(0);
 
@@ -46,26 +48,60 @@ export default function Panel({ catId }) {
   }, [refresh]);
 
   const isHub = catId === 'hub';
-  const tabIds = (state && state.hubTabs) || [];
+
+  useEffect(() => {
+    if (isHub || catId === 'quick') {
+      api.getLibrary?.().then(setLib);
+    }
+  }, [isHub, catId]);
+
+  const tabIds = useMemo(() => {
+    const list = (state && state.hubTabs) ? [...state.hubTabs] : [];
+    if (!list.includes('all')) list.push('all');
+    return list;
+  }, [state]);
+
   const activeTab = isHub ? (tabIds.includes(tab) ? tab : tabIds[0]) : null;
-  const contentId = isHub ? activeTab : catId; // the category (or "quick") whose tiles are shown
+  const contentId = isHub ? activeTab : catId; // the category (or "quick" or "all") whose tiles are shown
 
   const isQuick = contentId === 'quick';
+  const isAll = contentId === 'all';
+  const allBase = useMemo(() => ({ id: 'all', name: 'All Apps', icon: 'LayoutGrid', color: '#8b5cf6' }), []);
+
   const wd = state && !isHub && (state.widgetDefs || []).find((w) => w.id === catId);
   const base = state
-    ? wd || (isQuick ? state.quick : state.categories.find((c) => c.id === contentId))
+    ? wd || (isAll ? allBase : isQuick ? state.quick : state.categories.find((c) => c.id === contentId))
     : null;
   const pp = (state && state.panelPrefs && state.panelPrefs[catId]) || {};
   const cp = (state && state.panelPrefs && state.panelPrefs[contentId]) || {}; // look of the shown category
 
   const items = useMemo(() => {
     if (!state || !base || wd) return [];
+    if (isAll) {
+      const apps = lib ? lib.apps : [];
+      let list = apps.map((a) => ({ key: a.key, name: a.name, icon: a.icon, path: a.path, lib: true, category: a.category })).sort(byName);
+      if (q.trim()) {
+        const needle = q.trim().toLowerCase();
+        list = list.filter((i) => i.name.toLowerCase().includes(needle));
+      }
+      return list;
+    }
     if (isQuick) {
       const byKey = new Map(state.items.map((i) => [i.key, i]));
-      return state.quick.keys.map((k) => byKey.get(k)).filter(Boolean);
+      let list = state.quick.keys.map((k) => byKey.get(k)).filter(Boolean);
+      if (q.trim()) {
+        const needle = q.trim().toLowerCase();
+        list = list.filter((i) => i.name.toLowerCase().includes(needle));
+      }
+      return list;
     }
-    return state.items.filter((i) => i.category === contentId).sort(byName);
-  }, [state, base, isQuick, wd, contentId]);
+    let list = state.items.filter((i) => i.category === contentId).sort(byName);
+    if (q.trim()) {
+      const needle = q.trim().toLowerCase();
+      list = list.filter((i) => i.name.toLowerCase().includes(needle));
+    }
+    return list;
+  }, [state, base, isAll, isQuick, wd, contentId, lib, q]);
 
   if (!state || !base) return null;
 
@@ -92,41 +128,45 @@ export default function Panel({ catId }) {
   const pickTab = (id) => {
     setTab(id);
     lsSet('deskly.hubTab', id);
+    setQ('');
   };
 
   // `false` is stored on purpose: it tells the auto-fit "the user wants this one open".
   const toggleFold = async () => setState(await api.setPanelPrefs(catId, { collapsed: !collapsed }));
 
   const onDown = (e) => {
-    if (locked || e.button !== 0 || e.target.closest('button')) return;
-    e.currentTarget.setPointerCapture(e.pointerId);
+    if (locked || e.button !== 0 || e.target.closest('button, input')) return;
     dragging.current = true;
+    e.currentTarget.setPointerCapture(e.pointerId);
     api.panelDrag('start', e.screenX, e.screenY);
   };
   const onMove = (e) => {
     if (!dragging.current) return;
-    const { screenX, screenY } = e;
+    const sx = e.screenX;
+    const sy = e.screenY;
     cancelAnimationFrame(raf.current);
-    raf.current = requestAnimationFrame(() => api.panelDrag('move', screenX, screenY));
+    raf.current = requestAnimationFrame(() => api.panelDrag('move', sx, sy));
   };
   const onUp = (e) => {
     if (!dragging.current) return;
     dragging.current = false;
     cancelAnimationFrame(raf.current);
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch {}
     api.panelDrag('end', e.screenX, e.screenY);
   };
 
-  const badges = (it) => (
-    <>
-      {showRunning && running.has(it.key) && <i className="p-run" title="Running" />}
-      {it.isNew && <b className="p-new" title="Added recently" />}
-    </>
-  );
+  const badges = (it) => {
+    const isRunning = showRunning && running.has(it.key);
+    return (
+      <>
+        {isRunning && <span className="p-run" title="Running right now" />}
+        {it.isNew && <span className="p-new" title="New shortcut on your desktop" />}
+      </>
+    );
+  };
 
-  // Hover mini-toolbar: show in folder, run as administrator, close the app, peek inside a folder.
   const tools = (it) => {
-    if (density === 'mini') return null;
-    const isRunning = showRunning && running.has(it.key) && it.exe;
+    const isRunning = showRunning && running.has(it.key);
     const real = !it.lib && it.kind !== 'special';
     const folder = it.isFolder;
     const stop = (fn) => (e) => { e.stopPropagation(); e.preventDefault(); fn(); };
@@ -152,7 +192,7 @@ export default function Panel({ catId }) {
           onPointerMove={onMove}
           onPointerUp={onUp}
           onPointerCancel={onUp}
-          onDoubleClick={(e) => { if (!e.target.closest('button')) toggleFold(); }}
+          onDoubleClick={(e) => { if (!e.target.closest('button, input')) toggleFold(); }}
         >
           <span className="p-chip"><CatIcon name={base.icon} size={16} /></span>
           <span className="p-title">{name}</span>
@@ -161,7 +201,7 @@ export default function Panel({ catId }) {
           <button className="p-btn" title={collapsed ? 'Expand' : 'Collapse'} aria-label={collapsed ? 'Expand' : 'Collapse'} onClick={toggleFold}>
             {collapsed ? <ChevronDown size={15} /> : <ChevronUp size={15} />}
           </button>
-          <button className="p-btn" title="Open in Deskly" aria-label="Open in Deskly" onClick={() => api.openMain(wd ? WIDGET_PAGE[catId] : isQuick || isHub ? (isHub && !isQuick ? contentId : 'all') : catId)}>
+          <button className="p-btn" title="Open in Deskly" aria-label="Open in Deskly" onClick={() => api.openMain(wd ? WIDGET_PAGE[catId] : isQuick || isHub ? (isHub && !isQuick && !isAll ? contentId : 'all') : catId)}>
             <ArrowUpRight size={15} />
           </button>
         </header>
@@ -169,7 +209,7 @@ export default function Panel({ catId }) {
         {!collapsed && isHub && (
           <nav className="hub-tabs" aria-label="Categories">
             {tabIds.map((id) => {
-              const t = id === 'quick' ? state.quick : state.categories.find((c) => c.id === id);
+              const t = id === 'quick' ? state.quick : id === 'all' ? allBase : state.categories.find((c) => c.id === id);
               if (!t) return null;
               const tc = (state.panelPrefs && state.panelPrefs[id] && state.panelPrefs[id].color) || t.color;
               return (
@@ -189,39 +229,56 @@ export default function Panel({ catId }) {
                 {catId === 'w_dev' && <DevWidget />}
                 {catId === 'w_projects' && <ProjectsWidget />}
                 {catId === 'w_recent' && <RecentWidget />}
-                {catId === 'w_clock' && <ClockWidget state={state} />}
+                {catId === 'w_clock' && <ClockWidget />}
+                {catId === 'w_capture' && <CaptureWidget />}
               </>
-            ) : view === 'grid' ? (
-              <div className="p-grid">
-                {items.map((it, i) => (
-                  <button
-                    key={it.key}
-                    className={'p-tile' + (launching === it.key ? ' launching' : '')}
-                    style={{ '--i': Math.min(i, 20) }}
-                    title={density === 'mini' ? it.name : it.target || it.url || it.name}
-                    onClick={() => open(it)}
-                  >
-                    {tools(it)}
-                    <span className="p-icon"><Icon item={it} />{badges(it)}</span>
-                    {density !== 'mini' && <span className="p-name">{it.name}</span>}
-                  </button>
-                ))}
-              </div>
             ) : (
-              <div className="p-list">
-                {items.map((it, i) => (
-                  <button
-                    key={it.key}
-                    className={'p-row' + (launching === it.key ? ' launching' : '')}
-                    style={{ '--i': Math.min(i, 20) }}
-                    title={it.target || it.url || it.name}
-                    onClick={() => open(it)}
-                  >
-                    <span className="p-icon sm"><Icon item={it} />{badges(it)}</span>
-                    <span className="p-row-name">{it.name}</span>
-                  </button>
-                ))}
-              </div>
+              <>
+                {isAll && (
+                  <div className="p-filter-bar">
+                    <Search size={13} className="p-filter-ico" />
+                    <input
+                      type="text"
+                      className="p-filter-input"
+                      placeholder="Search all installed apps…"
+                      value={q}
+                      onChange={(e) => setQ(e.target.value)}
+                    />
+                  </div>
+                )}
+                {view === 'grid' ? (
+                  <div className="p-grid">
+                    {items.map((it, i) => (
+                      <button
+                        key={it.key}
+                        className={'p-tile' + (launching === it.key ? ' launching' : '')}
+                        style={{ '--i': Math.min(i, 20) }}
+                        title={density === 'mini' ? it.name : it.target || it.url || it.name}
+                        onClick={() => open(it)}
+                      >
+                        {tools(it)}
+                        <span className="p-icon"><Icon item={it} />{badges(it)}</span>
+                        {density !== 'mini' && <span className="p-name">{it.name}</span>}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="p-list">
+                    {items.map((it, i) => (
+                      <button
+                        key={it.key}
+                        className={'p-row' + (launching === it.key ? ' launching' : '')}
+                        style={{ '--i': Math.min(i, 20) }}
+                        title={it.target || it.url || it.name}
+                        onClick={() => open(it)}
+                      >
+                        <span className="p-icon sm"><Icon item={it} />{badges(it)}</span>
+                        <span className="p-row-name">{it.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </>
             )}
           </div>
         )}

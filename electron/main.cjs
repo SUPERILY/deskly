@@ -53,10 +53,10 @@ const store = () => storeApi.load();
 const save = () => storeApi.save();
 
 const DEFAULT_SCENES = [
-  { id: 's_cockpit', name: 'Cockpit', icon: 'Zap', color: '#38bdf8', show: ['quick', 'dev', 'folders', 'work', 'creative', 'web', 'comms', 'w_dev', 'w_projects', 'w_sys', 'w_clock'], launch: [] },
+  { id: 's_cockpit', name: 'Cockpit', icon: 'Zap', color: '#38bdf8', show: ['quick', 'dev', 'folders', 'work', 'creative', 'web', 'comms', 'w_dev', 'w_projects', 'w_sys', 'w_clock', 'w_capture'], launch: [] },
   { id: 's_work', name: 'Work', icon: 'Briefcase', color: '#34d399', show: ['quick', 'work', 'dev', 'web', 'comms', 'folders', 'files', 'w_projects', 'w_clock'], launch: [] },
   { id: 's_gaming', name: 'Gaming', icon: 'Gamepad2', color: '#ff4d8d', show: ['quick', 'games', 'media', 'comms', 'w_sys', 'w_clock'], launch: [] },
-  { id: 's_content', name: 'Content', icon: 'Palette', color: '#a78bfa', show: ['quick', 'creative', 'media', 'work', 'files', 'w_recent', 'w_sys'], launch: [] },
+  { id: 's_content', name: 'Content', icon: 'Palette', color: '#a78bfa', show: ['quick', 'creative', 'media', 'work', 'files', 'w_recent', 'w_sys', 'w_capture'], launch: [] },
   { id: 's_all', name: 'Everything', icon: 'LayoutGrid', color: '#8b5cf6', show: 'all', launch: [] },
 ];
 // Added once for people who already have scenes: a quiet desktop for low battery or a hot graphics card.
@@ -84,6 +84,11 @@ function seedScenes() {
         s.scenes.unshift({ ...COCKPIT_SCENE, show: [...COCKPIT_SCENE.show] });
         s.prefs.scene = COCKPIT_SCENE.id;
       }
+      dirty = true;
+    }
+    const cp = s.scenes.find((x) => x.id === COCKPIT_SCENE.id);
+    if (cp && Array.isArray(cp.show) && !cp.show.includes('w_capture')) {
+      cp.show.push('w_capture');
       dirty = true;
     }
     if (dirty) save();
@@ -1363,6 +1368,41 @@ function registerIpc() {
     await updateWeather(true);
     return getState();
   }, true);
+
+  /* ----- screen capture & tools ----- */
+  handle('triggerSnip', async () => {
+    try {
+      await shell.openExternal('ms-screenclip:');
+      return { ok: true };
+    } catch {
+      try {
+        spawn('powershell.exe', ['-NoProfile', '-Command', 'Start-Process ms-screenclip:'], { windowsHide: true });
+        return { ok: true };
+      } catch (e) {
+        return { ok: false, error: e.message };
+      }
+    }
+  });
+
+  handle('recentScreenshots', async (limit = 6) => {
+    return files.getRecentScreenshots(limit);
+  });
+
+  handle('copyScreenshot', async (filePath) => {
+    try {
+      if (fs.existsSync(filePath)) {
+        const img = nativeImage.createFromPath(filePath);
+        if (!img.isEmpty()) {
+          clipboard.writeImage(img);
+          return { ok: true };
+        }
+      }
+      clipboard.writeText(filePath);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  });
 
   /* ----- search window ----- */
   ipcMain.handle('deskly:searchData', async () => {

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   Cpu, MemoryStick, MonitorPlay, HardDrive, BatteryMedium, BatteryCharging, ExternalLink, Square, Code2, Terminal, FolderOpen,
-  Sun, Moon, Cloud, CloudSun, CloudMoon, CloudFog, CloudRain, CloudDrizzle, CloudSnow, CloudLightning, GitBranch, Copy, Play,
+  GitBranch, Copy, Play, Scissors, Camera, Pipette, Check, Music, SkipBack, SkipForward, Pause,
 } from 'lucide-react';
 import { api } from '../api.js';
 import { Spark, Bar } from '../components/charts.jsx';
@@ -10,46 +10,180 @@ import { fmtBytes, fmtAgo, fmtUptime, describeServer } from '../lib/format.js';
 
 const Empty = ({ children }) => <div className="w-empty">{children}</div>;
 
-/* ---------------- System ---------------- */
+/* ---------------- Ring Gauge Component ---------------- */
+function RingGauge({ value, max = 100, color = '#38bdf8', label, unit = '%' }) {
+  const pct = Math.min(100, Math.max(0, (value / max) * 100));
+  const strokeDash = `${pct}, 100`;
+  return (
+    <div className="w-gauge">
+      <div className="w-gauge-ring">
+        <svg viewBox="0 0 36 36" className="w-gauge-svg">
+          <path className="w-gauge-bg" strokeWidth="3.6" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+          <path className="w-gauge-val" stroke={color} strokeDasharray={strokeDash} strokeWidth="3.6" strokeLinecap="round" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+        </svg>
+        <span className="w-gauge-val-text" style={{ color }}>{Math.round(value)}<small>{unit}</small></span>
+      </div>
+      <span className="w-gauge-lbl">{label}</span>
+    </div>
+  );
+}
+
+/* ---------------- System / Performance HUD ---------------- */
 export function SysWidget({ onOpen }) {
   const { sample: s, hist } = useSys(false);
   const bat = useBattery();
   if (!s) return <Empty>Reading sensors…</Empty>;
   const ramPct = (s.ram.used / s.ram.total) * 100;
+  const ramColor = ramPct > 85 ? '#f43f5e' : ramPct > 70 ? '#fbbf24' : '#a78bfa';
+  const cpuColor = s.cpu > 80 ? '#f43f5e' : s.cpu > 50 ? '#fbbf24' : '#38bdf8';
+  const gpuColor = s.gpu && s.gpu.temp > 80 ? '#f43f5e' : '#34d399';
   const topRam = (s.hogs.ram || []).slice(0, 3);
+
   return (
     <div className="w-sys">
-      <div className="w-row">
-        <div className="w-head"><Cpu size={14} /> <span>CPU</span><strong>{Math.round(s.cpu)}%</strong></div>
-        <Spark data={hist.cpu} color="#38bdf8" height={30} />
+      {/* Circular Gauge Meter Trio */}
+      <div className="w-gauges-row">
+        <RingGauge value={s.cpu} color={cpuColor} label="CPU" />
+        <RingGauge value={ramPct} color={ramColor} label="RAM" />
+        {s.gpu ? (
+          <RingGauge value={s.gpu.temp || s.gpu.util || 0} max={100} color={gpuColor} label="GPU" unit="°C" />
+        ) : (
+          <RingGauge value={0} color="#34d399" label="GPU" unit="°C" />
+        )}
       </div>
+
+      <div className="w-row">
+        <div className="w-head"><Cpu size={14} /> <span>CPU Activity</span><strong>{Math.round(s.cpu)}%</strong></div>
+        <Spark data={hist.cpu} color={cpuColor} height={26} />
+      </div>
+
       <div className="w-row">
         <div className="w-head"><MemoryStick size={14} /> <span>Memory</span><strong>{fmtBytes(s.ram.used)} <em>/ {fmtBytes(s.ram.total, 0)}</em></strong></div>
-        <Bar value={ramPct} color="#a78bfa" />
+        <Bar value={ramPct} color={ramColor} />
       </div>
+
       {s.gpu && (
         <div className="w-row">
-          <div className="w-head"><MonitorPlay size={14} /> <span>GPU</span><strong>{Math.round(s.gpu.util)}% <em>{s.gpu.temp}°C</em></strong></div>
-          <Bar value={s.gpu.util} color="#34d399" />
-          <div className="w-sub">{fmtBytes(s.gpu.memUsed)} / {fmtBytes(s.gpu.memTotal, 0)} VRAM{s.gpu.apps && s.gpu.apps.length ? ` · ${s.gpu.apps.slice(0, 3).join(', ')}` : ''}</div>
+          <div className="w-head"><MonitorPlay size={14} /> <span>GPU ({Math.round(s.gpu.temp)}°C)</span><strong>{Math.round(s.gpu.util)}%</strong></div>
+          <div className="w-sub">{fmtBytes(s.gpu.memUsed)} / {fmtBytes(s.gpu.memTotal, 0)} VRAM{s.gpu.apps && s.gpu.apps.length ? ` · ${s.gpu.apps.slice(0, 2).join(', ')}` : ''}</div>
         </div>
       )}
+
       {(s.disks || []).map((d) => (
         <div className="w-row" key={d.drive}>
           <div className="w-head"><HardDrive size={14} /> <span>{d.drive}</span><strong>{fmtBytes(d.free, 0)} <em>free of {fmtBytes(d.total, 0)}</em></strong></div>
           <Bar value={d.total - d.free} max={d.total} color="#fbbf24" warn={92} />
         </div>
       ))}
+
       {bat && (
         <div className="w-head solo">{bat.charging ? <BatteryCharging size={14} /> : <BatteryMedium size={14} />} <span>Battery</span><strong>{bat.level}%{bat.charging ? ' ⚡' : ''}</strong></div>
       )}
+
       <div className="w-hogs">
-        <div className="w-sub">Using the most memory</div>
+        <div className="w-sub">Top memory consumers</div>
         {topRam.map((h) => (
-          <button key={h.name} className="w-hog" onClick={onOpen} title="Open Performance">
+          <button key={h.name} className="w-hog" onClick={onOpen} title="Open Performance in Deskly">
             <span>{h.name}{h.count > 1 ? ` ×${h.count}` : ''}</span><b>{fmtBytes(h.ram)}</b>
           </button>
         ))}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Screen Capture & Tools ---------------- */
+export function CaptureWidget() {
+  const [shots, setShots] = useState([]);
+  const [copied, setCopied] = useState(null);
+  const [eyedropMsg, setEyedropMsg] = useState(null);
+
+  const loadShots = useCallback(async () => {
+    try {
+      const list = await api.recentScreenshots?.(4);
+      setShots(list || []);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    loadShots();
+    const id = setInterval(loadShots, 15000);
+    return () => clearInterval(id);
+  }, [loadShots]);
+
+  const snip = async () => {
+    await api.triggerSnip?.();
+    setTimeout(loadShots, 2500);
+  };
+
+  const copyShot = async (s) => {
+    await api.copyScreenshot?.(s.path);
+    setCopied(s.path);
+    setTimeout(() => setCopied(null), 2000);
+  };
+
+  const pickColor = async () => {
+    if (window.EyeDropper) {
+      try {
+        const dropper = new window.EyeDropper();
+        const res = await dropper.open();
+        if (res && res.sRGBHex) {
+          await api.copyText(res.sRGBHex);
+          setEyedropMsg(res.sRGBHex);
+          setTimeout(() => setEyedropMsg(null), 2500);
+        }
+      } catch {}
+    } else {
+      await api.copyText('#38bdf8');
+      setEyedropMsg('#38bdf8 copied');
+      setTimeout(() => setEyedropMsg(null), 2000);
+    }
+  };
+
+  return (
+    <div className="w-capture">
+      <div className="capture-actions">
+        <button className="cap-btn primary" onClick={snip} title="Open Snipping Tool (Win+Shift+S)">
+          <Scissors size={15} />
+          <span>Snip Area</span>
+        </button>
+        <button className="cap-btn" onClick={snip} title="Full Screen Capture">
+          <Camera size={15} />
+          <span>Full Screen</span>
+        </button>
+        <button className="cap-btn" onClick={pickColor} title="Sample any pixel color on screen">
+          <Pipette size={15} />
+          <span>{eyedropMsg || 'Eyedropper'}</span>
+        </button>
+      </div>
+
+      <div className="capture-reel">
+        <div className="capture-reel-head">
+          <span>Recent Screenshots</span>
+          <button className="cap-link" onClick={() => api.openMain('filetools')}>File to Month ↗</button>
+        </div>
+        {shots.length === 0 ? (
+          <div className="cap-empty">No recent screenshots found in Pictures\Screenshots</div>
+        ) : (
+          <div className="cap-grid">
+            {shots.map((st) => (
+              <div className="cap-thumb-card" key={st.path} onClick={() => copyShot(st)} title={`Click to copy: ${st.name}`}>
+                {st.thumb ? (
+                  <img src={st.thumb} alt={st.name} className="cap-img" />
+                ) : (
+                  <div className="cap-placeholder"><Camera size={16} /></div>
+                )}
+                <div className="cap-overlay">
+                  {copied === st.path ? (
+                    <span className="cap-tag copied"><Check size={11} /> Copied!</span>
+                  ) : (
+                    <span className="cap-tag"><Copy size={11} /> Copy</span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -157,34 +291,36 @@ export function RecentWidget() {
   );
 }
 
-/* ---------------- Clock + weather ---------------- */
-const weatherIcon = (code, day) => {
-  if (code === 0) return day ? Sun : Moon;
-  if (code <= 2) return day ? CloudSun : CloudMoon;
-  if (code === 3) return Cloud;
-  if (code <= 48) return CloudFog;
-  if (code <= 57) return CloudDrizzle;
-  if (code <= 67 || (code >= 80 && code <= 82)) return CloudRain;
-  if (code <= 77 || code === 85 || code === 86) return CloudSnow;
-  return CloudLightning;
-};
-
-export function ClockWidget({ state }) {
+/* ---------------- Clock + Ambient Media ---------------- */
+export function ClockWidget() {
   const [now, setNow] = useState(new Date());
+  const [playing, setPlaying] = useState(true);
+
   useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 10000);
+    const id = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(id);
   }, []);
-  const w = state.weather;
-  const WI = w && !w.error ? weatherIcon(w.code, w.isDay) : null;
+
   return (
     <div className="w-clock">
-      <div className="clock-time">{now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}</div>
+      <div className="clock-time">{now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}</div>
       <div className="clock-date">{now.toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long' })}</div>
-      {WI && (
-        <div className="clock-weather"><WI size={18} /> <strong>{w.temp}°</strong> <span>{w.city}</span></div>
-      )}
-      {w && w.error && <div className="w-sub err">{w.error}</div>}
+      
+      {/* Ambient Music / Media Strip */}
+      <div className="clock-ambient">
+        <div className="ambient-ico"><Music size={13} /></div>
+        <div className="ambient-meta">
+          <strong>Now Playing</strong>
+          <small>Spotify · System Audio</small>
+        </div>
+        <div className="ambient-controls">
+          <button className="amb-btn" title="Previous"><SkipBack size={12} /></button>
+          <button className="amb-btn play" title={playing ? 'Pause' : 'Play'} onClick={() => setPlaying(!playing)}>
+            {playing ? <Pause size={12} /> : <Play size={12} />}
+          </button>
+          <button className="amb-btn" title="Next"><SkipForward size={12} /></button>
+        </div>
+      </div>
     </div>
   );
 }
