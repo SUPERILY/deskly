@@ -15,6 +15,10 @@ export default function Peek() {
 
   if (!d) return null;
   const open = (e) => { api.open(e.path); api.peekHide(); };
+  const onDrag = (ev, e) => {
+    ev.preventDefault();
+    api.startDrag(e.path, e.icon);
+  };
 
   return (
     <div className="pk-win">
@@ -31,7 +35,7 @@ export default function Peek() {
         ) : (
           <div className="pk-grid">
             {d.entries.map((e) => (
-              <button key={e.path} className="pk-item" title={e.path} onClick={() => open(e)}>
+              <button key={e.path} className="pk-item" draggable title={e.path} onClick={() => open(e)} onDragStart={(ev) => onDrag(ev, e)}>
                 <span className="pk-icon">{e.icon ? <img src={e.icon} alt="" draggable={false} /> : <Folder size={26} />}</span>
                 <span className="pk-name">{e.name}</span>
               </button>

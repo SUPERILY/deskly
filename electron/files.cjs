@@ -13,6 +13,7 @@ const crypto = require('crypto');
 const { app, shell, nativeImage } = require('electron');
 const { execFile } = require('child_process');
 const { isSensitive } = require('./categories.cjs');
+const ws = require('./winshell.cjs');
 
 const MB = 1024 * 1024;
 const HOUR = 3600 * 1000;
@@ -309,6 +310,14 @@ async function walk(onProgress) {
 // Paths among `list` that are cloud-only placeholders, reparse points, or offline: never read or listed.
 function cloudOnly(list) {
   if (!list.length) return Promise.resolve(new Set());
+  if (ws.available()) {
+    const cloudSet = new Set();
+    for (const p of list) {
+      if (ws.isCloudPlaceholder(p)) cloudSet.add(p.toLowerCase());
+    }
+    return Promise.resolve(cloudSet);
+  }
+
   const tmp = path.join(app.getPath('temp'), `deskly-attrs-${process.pid}-${Date.now()}.json`);
   fs.writeFileSync(tmp, JSON.stringify(list));
   const script =

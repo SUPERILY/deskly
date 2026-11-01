@@ -1,6 +1,7 @@
 // The dock: a slim floating bar (search, your top apps, Performance, All apps, Scenes, peek).
 // Unlike the desktop panels it floats above your windows, so it is always one click away.
 const { BrowserWindow, screen } = require('electron');
+const ws = require('./winshell.cjs');
 
 const SLOT = 44; // one button
 const SEP = 13; // a divider
@@ -49,6 +50,12 @@ function createDock({ preload, loadDock, getStore, getDockKeys, getDisplay = () 
       webPreferences: { preload, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false },
     });
     win.setAlwaysOnTop(true, 'floating');
+    const tbMsg = ws.getTaskbarCreatedMsg();
+    if (tbMsg) {
+      win.hookWindowMessage(tbMsg, () => {
+        place();
+      });
+    }
     win.on('closed', () => (win = null));
     await loadDock(win);
     if (win && !win.isDestroyed()) {

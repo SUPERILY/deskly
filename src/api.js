@@ -347,6 +347,7 @@ function createMock() {
     closeApp: async () => ({ ok: true }),
     peekFolder: async () => true,
     peekHide: async () => {},
+    startDrag: () => {},
     onPeekShow: () => () => {},
     togglePeekAll: async () => false,
     toggleSearch: async () => {},

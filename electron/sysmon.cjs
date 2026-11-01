@@ -86,6 +86,23 @@ function createSysmon({ onSample }) {
   }
 
   function readDisks() {
+    const list = [];
+    for (const l of 'CDEFGHIJKLMNOPQRSTUVWXYZ') {
+      try {
+        const root = l + ':\\';
+        const s = fs.statfsSync(root);
+        const total = Number(s.blocks) * Number(s.bsize);
+        const free = Number(s.bavail) * Number(s.bsize);
+        if (total > 0) {
+          list.push({ drive: l + ':', label: '', total, free });
+        }
+      } catch {}
+    }
+    if (list.length) {
+      disks = list;
+      return;
+    }
+
     execFile(
       'powershell.exe',
       ['-NoProfile', '-NonInteractive', '-Command', 'Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3" | Select-Object DeviceID,VolumeName,Size,FreeSpace | ConvertTo-Json -Compress'],

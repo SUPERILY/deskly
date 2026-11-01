@@ -84,6 +84,7 @@ contextBridge.exposeInMainWorld('deskly', {
   runAsAdmin: (p) => call('runAsAdmin', p),
   closeApp: (key) => call('closeApp', key),
   peekFolder: (p) => call('peekFolder', p),
+  startDrag: (p, icon) => ipcRenderer.send('deskly:startDrag', p, icon),
   togglePeekAll: () => call('togglePeekAll'),
   toggleSearch: () => call('toggleSearch'),
   dockData: () => call('dockData'),

@@ -26,6 +26,7 @@ const displays = require('./displays.cjs');
 const { createUpdater } = require('./updater.cjs');
 const { createAlerts } = require('./alerts.cjs');
 const { createHealth } = require('./health.cjs');
+const winshell = require('./winshell.cjs');
 
 // Icons are served from the on-disk cache through this scheme instead of being sent as base64.
 protocol.registerSchemesAsPrivileged([
@@ -52,6 +53,7 @@ const store = () => storeApi.load();
 const save = () => storeApi.save();
 
 const DEFAULT_SCENES = [
+  { id: 's_cockpit', name: 'Cockpit', icon: 'Zap', color: '#38bdf8', show: ['quick', 'dev', 'folders', 'work', 'creative', 'web', 'comms', 'w_dev', 'w_projects', 'w_sys', 'w_clock'], launch: [] },
   { id: 's_work', name: 'Work', icon: 'Briefcase', color: '#34d399', show: ['quick', 'work', 'dev', 'web', 'comms', 'folders', 'files', 'w_projects', 'w_clock'], launch: [] },
   { id: 's_gaming', name: 'Gaming', icon: 'Gamepad2', color: '#ff4d8d', show: ['quick', 'games', 'media', 'comms', 'w_sys', 'w_clock'], launch: [] },
   { id: 's_content', name: 'Content', icon: 'Palette', color: '#a78bfa', show: ['quick', 'creative', 'media', 'work', 'files', 'w_recent', 'w_sys'], launch: [] },
@@ -59,18 +61,32 @@ const DEFAULT_SCENES = [
 ];
 // Added once for people who already have scenes: a quiet desktop for low battery or a hot graphics card.
 const LIGHT_SCENE = { id: 's_light', name: 'Light mode', icon: 'BatteryLow', color: '#fbbf24', show: ['quick', 'w_clock'], launch: [] };
+const COCKPIT_SCENE = DEFAULT_SCENES[0];
 
 function seedScenes() {
   const s = store();
   if (!Array.isArray(s.scenes)) {
     s.scenes = DEFAULT_SCENES.map((x) => ({ ...x, show: x.show === 'all' ? 'all' : [...x.show] }));
     s.prefs.lightSceneAdded = true;
+    s.prefs.cockpitSceneAdded = true;
     s.scenes.push({ ...LIGHT_SCENE, show: [...LIGHT_SCENE.show] });
     save();
-  } else if (!s.prefs.lightSceneAdded) {
-    s.prefs.lightSceneAdded = true; // only once, so deleting it sticks
-    if (!s.scenes.some((x) => x.id === LIGHT_SCENE.id)) s.scenes.push({ ...LIGHT_SCENE, show: [...LIGHT_SCENE.show] });
-    save();
+  } else {
+    let dirty = false;
+    if (!s.prefs.lightSceneAdded) {
+      s.prefs.lightSceneAdded = true; // only once, so deleting it sticks
+      if (!s.scenes.some((x) => x.id === LIGHT_SCENE.id)) s.scenes.push({ ...LIGHT_SCENE, show: [...LIGHT_SCENE.show] });
+      dirty = true;
+    }
+    if (!s.prefs.cockpitSceneAdded) {
+      s.prefs.cockpitSceneAdded = true;
+      if (!s.scenes.some((x) => x.id === COCKPIT_SCENE.id)) {
+        s.scenes.unshift({ ...COCKPIT_SCENE, show: [...COCKPIT_SCENE.show] });
+        s.prefs.scene = COCKPIT_SCENE.id;
+      }
+      dirty = true;
+    }
+    if (dirty) save();
   }
 }
 
@@ -417,6 +433,12 @@ function createWindow() {
   });
   win.once('ready-to-show', () => win.show());
   win.setMenuBarVisibility(false);
+  const tbMsg = winshell.getTaskbarCreatedMsg();
+  if (tbMsg) {
+    win.hookWindowMessage(tbMsg, () => {
+      panels.recoverExplorer();
+    });
+  }
   loadRenderer(win);
   // With panels or background mode on, closing the window just tucks Deskly into the tray.
   win.on('close', (e) => {
@@ -1372,6 +1394,7 @@ function registerIpc() {
       ['open', 'Open Deskly', 'Show the main window'],
       ['perf', 'Performance', 'CPU, RAM, GPU, dev servers, startup, storage'],
       ['apps', 'All apps', 'Everything installed on this PC'],
+      ['tidy', 'Tidy desktop', 'Organize loose desktop shortcuts into category folders'],
       ['panels', st.prefs.desktopMode ? 'Turn desktop panels off' : 'Turn desktop panels on', 'Toggle the panels on your desktop'],
       ['quit', 'Quit Deskly', 'Close Deskly completely'],
     ];
@@ -1382,6 +1405,10 @@ function registerIpc() {
   ipcMain.handle('deskly:searchRun', async (_e, entry, alt) => {
     if (!entry) return;
     if (searchWin && !searchWin.isDestroyed()) searchWin.hide();
+    if (entry.type === 'calc') {
+      if (entry.copy) clipboard.writeText(String(entry.copy));
+      return;
+    }
     if (entry.type === 'item' || entry.type === 'lib' || entry.type === 'project') {
       await launchKey(entry.key, !!alt);
       notify();
@@ -1390,6 +1417,7 @@ function registerIpc() {
       if (entry.id === 'open') showMain();
       else if (entry.id === 'perf') showMain('performance');
       else if (entry.id === 'apps') showMain('apps');
+      else if (entry.id === 'tidy') showMain('panels');
       else if (entry.id === 'panels') {
         await setDesktopMode(!store().prefs.desktopMode);
         notify();
@@ -1402,6 +1430,15 @@ function registerIpc() {
 
   ipcMain.on('deskly:panelDrag', (e, phase, sx, sy) => panels.drag(e.sender.id, phase, sx, sy));
   ipcMain.on('deskly:openMain', (_e, page) => showMain(page));
+  ipcMain.on('deskly:startDrag', (e, filePath, iconUrl) => {
+    if (!filePath || !fs.existsSync(filePath)) return;
+    let icon = nativeImage.createFromPath(ICON);
+    if (iconUrl && typeof iconUrl === 'string' && iconUrl.startsWith('deskly-icon://i/')) {
+      const iconFile = path.join(scanner.iconDir(), iconUrl.replace('deskly-icon://i/', ''));
+      if (fs.existsSync(iconFile)) icon = nativeImage.createFromPath(iconFile);
+    }
+    e.sender.startDrag({ file: filePath, icon });
+  });
 }
 
 /* ---------- read-only diagnostic ---------- */

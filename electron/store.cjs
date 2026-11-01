@@ -52,14 +52,34 @@ const DEFAULTS = {
 let cache = null;
 let fresh = false; // true when this launch found no settings file: a brand-new install
 const file = () => path.join(app.getPath('userData'), 'deskly-store.json');
+const bakFile = () => path.join(app.getPath('userData'), 'deskly-store.json.bak');
+
+function tryParse(p) {
+  try {
+    if (fs.existsSync(p)) {
+      const content = fs.readFileSync(p, 'utf8').trim();
+      if (content) return JSON.parse(content);
+    }
+  } catch {}
+  return null;
+}
 
 function load() {
   if (cache) return cache;
-  try {
-    const raw = JSON.parse(fs.readFileSync(file(), 'utf8'));
+  const target = file();
+  let raw = tryParse(target);
+  if (!raw) {
+    // If target failed to parse or is empty, try recovering from .bak
+    raw = tryParse(bakFile());
+    if (raw) {
+      console.warn('store: primary store corrupted or empty, recovered from backup');
+    }
+  }
+
+  if (raw) {
     cache = { ...DEFAULTS, ...raw, prefs: { ...DEFAULTS.prefs, ...(raw.prefs || {}) } };
-  } catch (e) {
-    fresh = !!e && e.code === 'ENOENT';
+  } else {
+    fresh = !fs.existsSync(target) && !fs.existsSync(bakFile());
     cache = JSON.parse(JSON.stringify(DEFAULTS));
   }
   return cache;
@@ -74,8 +94,22 @@ function replace(obj) {
 
 function save() {
   try {
-    fs.mkdirSync(path.dirname(file()), { recursive: true });
-    fs.writeFileSync(file(), JSON.stringify(cache, null, 2));
+    const target = file();
+    const dir = path.dirname(target);
+    fs.mkdirSync(dir, { recursive: true });
+    const payload = JSON.stringify(cache, null, 2);
+    const tmp = path.join(dir, `deskly-store.${process.pid}.${Date.now()}.tmp`);
+    fs.writeFileSync(tmp, payload, 'utf8');
+
+    // Make a backup copy of current valid target if it exists
+    try {
+      if (fs.existsSync(target)) {
+        fs.copyFileSync(target, bakFile());
+      }
+    } catch {}
+
+    // Atomic replace on Windows
+    fs.renameSync(tmp, target);
   } catch (e) {
     console.error('store save failed', e);
   }

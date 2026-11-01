@@ -332,10 +332,10 @@ function createPanels({ preload, loadPanel, getStore, save, onAutoCollapse, getD
   }
 
   // Explorer restarts (crash, taskbar fix) destroy the desktop window and our panels with it.
-  function watchdog() {
+  function watchdog(force = false) {
     if (!enabled) return;
     const cur = ws.progman();
-    if (cur && cur !== progman) {
+    if (cur && (force || cur !== progman)) {
       for (const e of wins.values()) if (!e.win.isDestroyed()) e.win.destroy();
       wins.clear();
       progman = cur;
@@ -349,6 +349,7 @@ function createPanels({ preload, loadPanel, getStore, save, onAutoCollapse, getD
     isEnabled: () => enabled,
     autoCollapsed: () => [...autoSet],
     isHidden: () => hiddenAll,
+    recoverExplorer: () => watchdog(true),
 
     async enable(state) {
       if (!ws.available()) return false;

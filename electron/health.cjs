@@ -6,6 +6,7 @@
 const os = require('os');
 const fs = require('fs');
 const { execFile } = require('child_process');
+const ws = require('./winshell.cjs');
 
 const SAMPLE_MS = 5 * 60 * 1000;
 const KEEP_DAYS = 35;
@@ -27,6 +28,9 @@ function cpuTimes() {
 }
 
 function readBattery() {
+  const nativeStatus = ws.getPowerStatus();
+  if (nativeStatus !== undefined) return Promise.resolve(nativeStatus);
+
   return new Promise((resolve) => {
     execFile(
       'powershell.exe',

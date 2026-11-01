@@ -68,35 +68,38 @@ while ($true) {
   $ramTop = @($all | Sort-Object { $_.ram } -Descending | Select-Object -First 8 | ForEach-Object { @{ name = $_.name; cpu = [Math]::Round($_.cpu, 1); ram = $_.ram; count = $_.count; pids = @($_.pids) } })
   $gpuTop = @($gpuAgg.Values | Where-Object { $_.gpu -ge 0.5 } | Sort-Object { $_.gpu } -Descending | Select-Object -First 6 | ForEach-Object { @{ name = $_.name; gpu = [Math]::Round($_.gpu, 1); pids = @($_.pids) } })
 
-  # dev servers: listening ports owned by dev-ish programs
-  $servers = New-Object System.Collections.ArrayList
-  $seen = @{}
-  # `netstat` is ~20x cheaper than Get-NetTCPConnection and also lists IPv6 listeners
-  foreach ($line in (netstat -ano | Select-String 'LISTENING')) {
-    $f = ($line.ToString().Trim() -split '\s+')
-    if ($f.Count -lt 5 -or $f[0] -ne 'TCP') { continue }
-    $port = [int]($f[1].Substring($f[1].LastIndexOf(':') + 1))
-    $ownerPid = [int]$f[4]
-    if ($port -lt 1024 -and $port -ne 80) { continue }
-    $key = "$ownerPid`:$port"
-    if ($seen.ContainsKey($key)) { continue }
-    $seen[$key] = $true
-    if (-not $byId.ContainsKey($ownerPid)) { continue }
-    $pn = $byId[$ownerPid].ProcessName
-    if ($devNames -notcontains $pn.ToLower()) { continue }
-    if (-not $cmdCache.ContainsKey($ownerPid)) {
-      $ci = Get-CimInstance Win32_Process -Filter "ProcessId=$ownerPid"
-      $sm = 0
-      if ($ci.CreationDate) { $sm = [long]([DateTimeOffset]$ci.CreationDate).ToUnixTimeMilliseconds() }
-      $cmdCache[$ownerPid] = @{ cmd = [string]$ci.CommandLine; start = $sm }
+  # dev servers: listening ports owned by dev-ish programs (sampled every 2nd tick to conserve CPU)
+  if ($tick % 2 -eq 0 -or $serversCached -eq $null) {
+    $servers = New-Object System.Collections.ArrayList
+    $seen = @{}
+    # `netstat` is ~20x cheaper than Get-NetTCPConnection and also lists IPv6 listeners
+    foreach ($line in (netstat -ano | Select-String 'LISTENING')) {
+      $f = ($line.ToString().Trim() -split '\s+')
+      if ($f.Count -lt 5 -or $f[0] -ne 'TCP') { continue }
+      $port = [int]($f[1].Substring($f[1].LastIndexOf(':') + 1))
+      $ownerPid = [int]$f[4]
+      if ($port -lt 1024 -and $port -ne 80) { continue }
+      $key = "$ownerPid`:$port"
+      if ($seen.ContainsKey($key)) { continue }
+      $seen[$key] = $true
+      if (-not $byId.ContainsKey($ownerPid)) { continue }
+      $pn = $byId[$ownerPid].ProcessName
+      if ($devNames -notcontains $pn.ToLower()) { continue }
+      if (-not $cmdCache.ContainsKey($ownerPid)) {
+        $ci = Get-CimInstance Win32_Process -Filter "ProcessId=$ownerPid"
+        $sm = 0
+        if ($ci.CreationDate) { $sm = [long]([DateTimeOffset]$ci.CreationDate).ToUnixTimeMilliseconds() }
+        $cmdCache[$ownerPid] = @{ cmd = [string]$ci.CommandLine; start = $sm }
+      }
+      $cmd = $cmdCache[$ownerPid].cmd
+      if ($cmd -match $skipCmd) { continue }
+      [void]$servers.Add(@{ port = $port; pid = $ownerPid; name = $pn; cmd = $(if ($cmd.Length -gt 400) { $cmd.Substring(0, 400) } else { $cmd }); start = $cmdCache[$ownerPid].start; ram = [long]$byId[$ownerPid].WorkingSet64 })
     }
-    $cmd = $cmdCache[$ownerPid].cmd
-    if ($cmd -match $skipCmd) { continue }
-    [void]$servers.Add(@{ port = $port; pid = $ownerPid; name = $pn; cmd = $(if ($cmd.Length -gt 400) { $cmd.Substring(0, 400) } else { $cmd }); start = $cmdCache[$ownerPid].start; ram = [long]$byId[$ownerPid].WorkingSet64 })
+    $serversCached = @($servers)
   }
   if ($cmdCache.Count -gt 200) { $cmdCache = @{} }
 
-  $out = @{ first = ($tick -eq 0); cpu = $cpuTop; ram = $ramTop; gpu = $gpuTop; servers = @($servers); procCount = $procs.Count }
+  $out = @{ first = ($tick -eq 0); cpu = $cpuTop; ram = $ramTop; gpu = $gpuTop; servers = $serversCached; procCount = $procs.Count }
   [Console]::Out.WriteLine(($out | ConvertTo-Json -Compress -Depth 6))
   [Console]::Out.Flush()
   if ($Once) { break }

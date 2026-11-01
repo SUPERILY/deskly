@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Search as SearchIcon, CornerDownLeft, Layers, Command, Code2 } from 'lucide-react';
+import { Search as SearchIcon, CornerDownLeft, Layers, Command, Code2, Calculator, ArrowRightLeft } from 'lucide-react';
 import { api } from './api.js';
 
 // Score: exact > prefix > word start > substring > initials ("vsc" = Visual Studio Code). 0 = no match.
@@ -12,6 +12,51 @@ function score(name, q) {
   if (n.includes(q)) return 40 - n.indexOf(q) * 0.1;
   if (q.length >= 2 && words.map((w) => w[0]).join('').startsWith(q)) return 30;
   return 0;
+}
+
+const UNITS = {
+  b: 1, kb: 1024, mb: 1024 ** 2, gb: 1024 ** 3, tb: 1024 ** 4,
+  m: 1, km: 1000, cm: 0.01, mm: 0.001, mi: 1609.344, miles: 1609.344, ft: 0.3048, in: 0.0254,
+  g: 1, kg: 1000, lb: 453.59237, lbs: 453.59237, oz: 28.3495,
+};
+
+function tryUnit(str) {
+  const m = /^([\d.]+)\s*([a-z]+)\s*(?:in|to|=)\s*([a-z]+)$/i.exec(str.trim());
+  if (!m) return null;
+  const val = parseFloat(m[1]);
+  const from = m[2].toLowerCase();
+  const to = m[3].toLowerCase();
+  if (isNaN(val)) return null;
+  if ((from === 'c' || from === 'celsius') && (to === 'f' || to === 'fahrenheit')) {
+    const res = Math.round((val * 9 / 5 + 32) * 100) / 100;
+    return { name: `${res} °F`, sub: `${val} °C = ${res} °F`, copy: `${res}` };
+  }
+  if ((from === 'f' || from === 'fahrenheit') && (to === 'c' || to === 'celsius')) {
+    const res = Math.round(((val - 32) * 5 / 9) * 100) / 100;
+    return { name: `${res} °C`, sub: `${val} °F = ${res} °C`, copy: `${res}` };
+  }
+  if (UNITS[from] && UNITS[to]) {
+    const base = val * UNITS[from];
+    const res = Math.round((base / UNITS[to]) * 1e4) / 1e4;
+    return { name: `${res} ${to}`, sub: `${val} ${from} = ${res} ${to}`, copy: `${res}` };
+  }
+  return null;
+}
+
+function tryMath(str) {
+  const s = str.trim().replace(/^=/, '').trim();
+  if (!s || s.length < 2) return null;
+  if (!/[0-9]/.test(s) || !/[+\-*/%^]/.test(s)) return null;
+  if (!/^[\d\s+\-*/().%^]+$/.test(s)) return null;
+  try {
+    const expr = s.replace(/\^/g, '**');
+    const res = Function(`"use strict"; return (${expr})`)();
+    if (typeof res === 'number' && Number.isFinite(res)) {
+      const formatted = Math.round(res * 1e8) / 1e8;
+      return { name: `${formatted}`, sub: `${s} = ${formatted}`, copy: `${formatted}` };
+    }
+  } catch {}
+  return null;
 }
 
 const KIND_ORDER = { Desktop: 0, App: 1, Game: 1, Browser: 2, Project: 3, Scene: 4, Action: 5 };
@@ -48,21 +93,54 @@ export default function Search() {
       const actions = entries.filter((e) => e.type === 'action').slice(0, 3);
       return [...top, ...scenes, ...actions];
     }
-    return entries
+
+    // Command palette mode ('>')
+    if (needle.startsWith('>')) {
+      const cmd = needle.slice(1).trim();
+      const actions = entries.filter((e) => e.type === 'action' || e.type === 'scene');
+      if (!cmd) return actions;
+      return actions
+        .map((e) => ({ e, base: score(e.name, cmd) }))
+        .filter((x) => x.base > 0)
+        .sort((a, b) => b.base - a.base)
+        .map((x) => x.e);
+    }
+
+    const cards = [];
+    const unit = tryUnit(q);
+    if (unit) {
+      cards.push({ type: 'calc', kind: 'Unit', name: unit.name, sub: unit.sub, copy: unit.copy, icon: null });
+    }
+    const math = tryMath(q);
+    if (math) {
+      cards.push({ type: 'calc', kind: 'Calculator', name: math.name, sub: math.sub, copy: math.copy, icon: null });
+    }
+
+    const matches = entries
       .map((e) => ({ e, base: score(e.name, needle) }))
       .filter((x) => x.base > 0) // usage and pins only break ties between real matches
       .map((x) => ({ e: x.e, s: x.base + (x.e.use ? Math.min(12, x.e.use) : 0) + (x.e.pinned ? 4 : 0) - (KIND_ORDER[x.e.kind] || 0) * 0.2 }))
       .sort((a, b) => b.s - a.s)
-      .slice(0, 9)
+      .slice(0, 9 - cards.length)
       .map((x) => x.e);
-  }, [entries, needle]);
+
+    return [...cards, ...matches];
+  }, [entries, needle, q]);
 
   useEffect(() => setSel(0), [needle]);
   useEffect(() => {
     list.current?.querySelector('.sr.on')?.scrollIntoView({ block: 'nearest' });
   }, [sel]);
 
-  const run = (e, alt = false) => e && api.searchRun(e, alt);
+  const run = (e, alt = false) => {
+    if (!e) return;
+    if (e.type === 'calc') {
+      api.copyText(e.copy);
+      api.searchHide();
+      return;
+    }
+    api.searchRun(e, alt);
+  };
 
   const onKey = (ev) => {
     if (ev.key === 'Escape') return api.searchHide();
@@ -78,16 +156,26 @@ export default function Search() {
       <div className="s-card">
         <div className="s-input">
           <SearchIcon size={20} />
-          <input ref={input} autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search apps, games, projects, scenes…" spellCheck={false} />
+          <input ref={input} autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search apps, games, math, or '>' for commands…" spellCheck={false} />
           {indexing && <span className="s-idx">indexing…</span>}
           <kbd>Esc</kbd>
         </div>
         <div className="s-list" ref={list}>
           {heading && <div className="s-head">{heading}</div>}
           {results.map((r, i) => (
-            <button key={(r.key || r.id) + i} className={'sr' + (i === sel ? ' on' : '')} onMouseMove={() => setSel(i)} onClick={() => run(r)}>
+            <button key={(r.key || r.id || r.name) + i} className={'sr' + (i === sel ? ' on' : '')} onMouseMove={() => setSel(i)} onClick={() => run(r)}>
               <span className="sr-icon" style={r.color ? { '--c': r.color } : null}>
-                {r.icon ? <img src={r.icon} alt="" draggable={false} /> : r.type === 'scene' ? <Layers size={20} /> : r.type === 'project' ? <Code2 size={20} /> : <Command size={20} />}
+                {r.icon ? (
+                  <img src={r.icon} alt="" draggable={false} />
+                ) : r.type === 'scene' ? (
+                  <Layers size={20} />
+                ) : r.type === 'project' ? (
+                  <Code2 size={20} />
+                ) : r.type === 'calc' ? (
+                  r.kind === 'Unit' ? <ArrowRightLeft size={20} /> : <Calculator size={20} />
+                ) : (
+                  <Command size={20} />
+                )}
               </span>
               <span className="sr-text"><strong>{r.name}</strong><small>{r.sub}</small></span>
               <span className="sr-kind">{r.kind}</span>
@@ -98,7 +186,7 @@ export default function Search() {
         </div>
         <div className="s-foot">
           <span><kbd>↑</kbd><kbd>↓</kbd> move</span>
-          <span><kbd>Enter</kbd> open</span>
+          <span><kbd>Enter</kbd> {results[sel]?.type === 'calc' ? 'copy' : 'open'}</span>
           <span><kbd>Ctrl</kbd>+<kbd>Enter</kbd> project folder</span>
           {hotkey && <span className="s-hk">{hotkey.replace('Control', 'Ctrl')}</span>}
         </div>
