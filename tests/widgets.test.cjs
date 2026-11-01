@@ -22,6 +22,14 @@ test('widgets: dimsOf correctly sizes w_capture and other widgets', () => {
   const collapsed = dimsOf({ widget: 'w_capture', collapsed: true });
   assert.equal(collapsed.w, 340);
   assert.equal(collapsed.h, 56 + 8 * 2); // HEAD + MARGIN * 2
+
+  const custom = dimsOf({ widget: 'w_capture', customW: 460, customH: 380 });
+  assert.equal(custom.w, 460);
+  assert.equal(custom.h, 380);
+
+  const customCollapsed = dimsOf({ widget: 'w_capture', customW: 460, customH: 380, collapsed: true });
+  assert.equal(customCollapsed.w, 460);
+  assert.equal(customCollapsed.h, 56 + 8 * 2);
 });
 
 test('widgets: setup sanitizes w_capture widget preference', () => {

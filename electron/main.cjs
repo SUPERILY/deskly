@@ -220,9 +220,31 @@ function buildQuick(items, s) {
 }
 
 // Library items the user pinned show up in the category panels like any other tile.
-function pinnedLibraryItems(s) {
+// Deduplication: if an app is already on the desktop, do not add a duplicate; mark the desktop item pinned instead.
+function pinnedLibraryItems(s, desk = []) {
   if (!libCache || !s.libPins.length) return [];
-  const picks = s.libPins.map((k) => libByKey.get(k)).filter((l) => l && l.kind !== 'project').map((l) => ({ ...l }));
+  const deskNorm = new Set(desk.map((i) => norm(i.name)));
+  const deskTargets = new Set(desk.map((i) => (i.target || '').toLowerCase()).filter(Boolean));
+  const deskExes = new Set(desk.map((i) => (i.exe || '').toLowerCase()).filter(Boolean));
+
+  const picks = s.libPins
+    .map((k) => libByKey.get(k))
+    .filter((l) => {
+      if (!l || l.kind === 'project') return false;
+      const lNorm = norm(l.name);
+      const lTarget = (l.path || '').toLowerCase();
+      const lExe = path.basename(l.path || '').toLowerCase();
+      if (deskNorm.has(lNorm) || (lTarget && deskTargets.has(lTarget)) || (lExe && deskExes.has(lExe))) {
+        const match = desk.find(
+          (d) => norm(d.name) === lNorm || (d.target && d.target.toLowerCase() === lTarget) || (d.exe && d.exe.toLowerCase() === lExe)
+        );
+        if (match) match.pinned = true;
+        return false;
+      }
+      return true;
+    })
+    .map((l) => ({ ...l }));
+
   library.assignCategories(picks, s, validCats());
   return picks.map((l) => ({
     key: l.key,
@@ -258,7 +280,7 @@ function getState() {
   const valid = new Set(categories.map((c) => c.id));
   const p = scanner.scan(s, elevated, valid).then(({ items: desk, hiddenCount, dirty, ruleCounts }) => {
     if (dirty) save();
-    const items = [...desk, ...pinnedLibraryItems(s)];
+    const items = [...desk, ...pinnedLibraryItems(s, desk)];
     lastItems = items;
     const st = {
       elevated,
@@ -1137,6 +1159,26 @@ function registerIpc() {
 
   handle('pinLib', async (key, on) => {
     const s = store();
+    const lib = libByKey.get(key);
+    if (lib) {
+      const lNorm = norm(lib.name);
+      const lTarget = (lib.path || '').toLowerCase();
+      const lExe = path.basename(lib.path || '').toLowerCase();
+      const deskMatch = lastItems.find(
+        (i) => !i.lib && (norm(i.name) === lNorm || (i.target && i.target.toLowerCase() === lTarget) || (i.exe && i.exe.toLowerCase() === lExe))
+      );
+      if (deskMatch) {
+        if (on) {
+          if (!s.pins.includes(deskMatch.key)) s.pins.push(deskMatch.key);
+        } else {
+          s.pins = s.pins.filter((k) => k !== deskMatch.key);
+        }
+        s.libPins = s.libPins.filter((k) => k !== key);
+        save();
+        invalidate();
+        return getState();
+      }
+    }
     s.libPins = on ? [...new Set([...s.libPins, key])] : s.libPins.filter((k) => k !== key);
     save();
     invalidate();
@@ -1469,6 +1511,7 @@ function registerIpc() {
   });
 
   ipcMain.on('deskly:panelDrag', (e, phase, sx, sy) => panels.drag(e.sender.id, phase, sx, sy));
+  ipcMain.on('deskly:panelResize', (e, phase, sx, sy) => panels.resize(e.sender.id, phase, sx, sy));
   ipcMain.on('deskly:openMain', (_e, page) => showMain(page));
   ipcMain.on('deskly:startDrag', (e, filePath, iconUrl) => {
     if (!filePath || !fs.existsSync(filePath)) return;

@@ -27,25 +27,30 @@ const densityOf = (id, pp, prefs) => {
   return DENS[d] ? d : 'compact';
 };
 
-// Window size for a panel spec. `collapsed` keeps only the header bar. Widgets have fixed sizes.
+// Window size for a panel spec. `collapsed` keeps only the header bar. Widgets have fixed sizes or user custom sizes.
 function dimsOf(s) {
   const D = DENS[s.density] || DENS.comfortable;
   if (s.widget && widgetById[s.widget]) {
     const wd = widgetById[s.widget];
-    return { w: wd.w, h: s.collapsed ? HEAD + MARGIN * 2 : wd.h };
+    const w = s.customW || wd.w;
+    const h = s.customH || wd.h;
+    return { w, h: s.collapsed ? HEAD + MARGIN * 2 : h };
+  }
+  if (s.customW && s.customH && !s.collapsed) {
+    return { w: s.customW, h: s.customH };
   }
   if (s.hub) {
-    const w = D.hubCols * D.tw + PAD * 2 + MARGIN * 2;
+    const w = s.customW || (D.hubCols * D.tw + PAD * 2 + MARGIN * 2);
     if (s.collapsed) return { w, h: HEAD + MARGIN * 2 };
     const rows = Math.min(Math.max(1, Math.ceil(s.n / D.hubCols)), D.rows);
-    return { w, h: HEAD + TABS_H + rows * D.th + PAD + MARGIN * 2 };
+    return { w, h: s.customH || (HEAD + TABS_H + rows * D.th + PAD + MARGIN * 2) };
   }
   const cols = D.cols(s.n);
-  const w = s.view === 'list' ? LIST_W : cols * D.tw + PAD * 2 + MARGIN * 2;
+  const w = s.customW || (s.view === 'list' ? LIST_W : cols * D.tw + PAD * 2 + MARGIN * 2);
   if (s.collapsed) return { w, h: HEAD + MARGIN * 2 };
-  if (s.view === 'list') return { w, h: HEAD + Math.min(Math.max(s.n, 1), LIST_MAX_ROWS) * ROW_H + PAD + MARGIN * 2 };
+  if (s.view === 'list') return { w, h: s.customH || (HEAD + Math.min(Math.max(s.n, 1), LIST_MAX_ROWS) * ROW_H + PAD + MARGIN * 2) };
   const rows = Math.min(Math.max(1, Math.ceil(s.n / cols)), D.rows);
-  return { w, h: HEAD + rows * D.th + PAD + MARGIN * 2 };
+  return { w, h: s.customH || (HEAD + rows * D.th + PAD + MARGIN * 2) };
 }
 
 // Which panels exist for this state, in display order.
@@ -65,6 +70,8 @@ function specsOf(state) {
     view: (pp[s.id] && pp[s.id].view) === 'list' ? 'list' : 'grid',
     collapsed: !!(pp[s.id] && pp[s.id].collapsed),
     density: densityOf(s.id, pp, prefs),
+    customW: pp[s.id] && pp[s.id].customW,
+    customH: pp[s.id] && pp[s.id].customH,
   });
 
   const tabs = [];
@@ -225,7 +232,7 @@ function createPanels({ preload, loadPanel, getStore, save, onAutoCollapse, getD
     return { x: pick(x + MARGIN, xs) - MARGIN, y: pick(y + MARGIN, ys) - MARGIN };
   }
 
-  const sigOf = (s) => [s.n, s.view, s.collapsed, s.density, s.hub ? (s.tabIds || []).join(',') : ''].join('|');
+  const sigOf = (s) => [s.n, s.view, s.collapsed, s.density, s.customW, s.customH, s.hub ? (s.tabIds || []).join(',') : ''].join('|');
 
   async function create(spec, pos) {
     const d = dimsOf(spec);
@@ -417,6 +424,30 @@ function createPanels({ preload, loadPanel, getStore, save, onAutoCollapse, getD
         e.drag = null;
         const s = getStore();
         (s.panels ||= {})[e.id] = { x: Math.round(e.x), y: Math.round(e.y) };
+        save();
+      }
+    },
+
+    // Corner drag resize: stretch or shrink any widget or panel
+    resize(webContentsId, phase, sx, sy) {
+      if (prefs().panelsLocked) return;
+      const e = [...wins.values()].find((w) => !w.win.isDestroyed() && w.win.webContents.id === webContentsId);
+      if (!e) return;
+      if (phase === 'start') {
+        e.resizing = { sx, sy, w: e.w, h: e.h };
+      } else if (phase === 'move' && e.resizing) {
+        const dw = sx - e.resizing.sx;
+        const dh = sy - e.resizing.sy;
+        const nw = Math.max(220, Math.min(1400, Math.round(e.resizing.w + dw)));
+        const nh = Math.max(120, Math.min(1000, Math.round(e.resizing.h + dh)));
+        e.w = nw;
+        e.h = nh;
+        ws.place(e.win, e.x, e.y, e.w, e.h);
+      } else if (phase === 'end' && e.resizing) {
+        e.resizing = null;
+        const s = getStore();
+        s.panelPrefs = s.panelPrefs || {};
+        s.panelPrefs[e.id] = { ...(s.panelPrefs[e.id] || {}), customW: e.w, customH: e.h };
         save();
       }
     },

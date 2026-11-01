@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowUpRight, ChevronDown, ChevronUp, FolderOpen, ShieldCheck, Power, Eye, Search } from 'lucide-react';
+import { ArrowUpRight, ChevronDown, ChevronUp, FolderOpen, ShieldCheck, Power, Eye, Search, Palette, RotateCcw } from 'lucide-react';
 import { api } from './api.js';
 import { CatIcon } from './icons.jsx';
 import { SysWidget, DevWidget, ProjectsWidget, RecentWidget, ClockWidget, CaptureWidget } from './widgets/Widgets.jsx';
 
 const WIDGET_PAGE = { w_sys: 'performance', w_dev: 'performance', w_projects: 'apps', w_recent: 'apps', w_clock: 'scenes', w_capture: 'filetools' };
+const SWATCHES = ['#ff4d8d', '#fb923c', '#fbbf24', '#34d399', '#2dd4bf', '#38bdf8', '#8b5cf6', '#f472b6'];
 
 const byName = (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
 
@@ -31,7 +32,9 @@ export default function Panel({ catId }) {
   const [tab, setTab] = useState(() => lsGet('deskly.hubTab'));
   const [lib, setLib] = useState(null);
   const [q, setQ] = useState('');
+  const [customizing, setCustomizing] = useState(false);
   const dragging = useRef(false);
+  const resizing = useRef(false);
   const raf = useRef(0);
 
   const refresh = useCallback(async () => {
@@ -155,6 +158,29 @@ export default function Panel({ catId }) {
     api.panelDrag('end', e.screenX, e.screenY);
   };
 
+  // Resize grip handlers
+  const onResizeDown = (e) => {
+    if (locked || e.button !== 0) return;
+    e.stopPropagation();
+    resizing.current = true;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    api.panelResize('start', e.screenX, e.screenY);
+  };
+  const onResizeMove = (e) => {
+    if (!resizing.current) return;
+    cancelAnimationFrame(raf.current);
+    const sx = e.screenX;
+    const sy = e.screenY;
+    raf.current = requestAnimationFrame(() => api.panelResize('move', sx, sy));
+  };
+  const onResizeUp = (e) => {
+    if (!resizing.current) return;
+    resizing.current = false;
+    cancelAnimationFrame(raf.current);
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch {}
+    api.panelResize('end', e.screenX, e.screenY);
+  };
+
   const badges = (it) => {
     const isRunning = showRunning && running.has(it.key);
     return (
@@ -198,6 +224,11 @@ export default function Panel({ catId }) {
           <span className="p-title">{name}</span>
           {!wd && <span className="p-count">{items.length}</span>}
           {wd && <span className="p-spacer" />}
+          {!wd && (
+            <button className={'p-btn' + (customizing ? ' on' : '')} title="Customize category color & view" onClick={() => setCustomizing(!customizing)}>
+              <Palette size={14} />
+            </button>
+          )}
           <button className="p-btn" title={collapsed ? 'Expand' : 'Collapse'} aria-label={collapsed ? 'Expand' : 'Collapse'} onClick={toggleFold}>
             {collapsed ? <ChevronDown size={15} /> : <ChevronUp size={15} />}
           </button>
@@ -205,6 +236,61 @@ export default function Panel({ catId }) {
             <ArrowUpRight size={15} />
           </button>
         </header>
+
+        {customizing && !collapsed && (
+          <div className="p-cat-popup">
+            <div className="p-cat-row">
+              <span className="p-cat-label">Name</span>
+              <input
+                type="text"
+                className="p-cat-input"
+                defaultValue={name}
+                onBlur={async (e) => {
+                  const val = e.target.value.trim();
+                  if (val && val !== name) setState(await api.setPanelPrefs(catId, { name: val }));
+                }}
+              />
+            </div>
+            <div className="p-cat-row">
+              <span className="p-cat-label">Color</span>
+              <div className="p-swatches">
+                {SWATCHES.map((sw) => (
+                  <button
+                    key={sw}
+                    className={'p-swatch' + (sw === color ? ' on' : '')}
+                    style={{ '--sw': sw }}
+                    onClick={async () => setState(await api.setPanelPrefs(catId, { color: sw }))}
+                  />
+                ))}
+              </div>
+            </div>
+            <div className="p-cat-row">
+              <span className="p-cat-label">View</span>
+              <div className="p-view-toggle">
+                <button
+                  className={'p-seg-btn' + (view === 'grid' ? ' on' : '')}
+                  onClick={async () => setState(await api.setPanelPrefs(catId, { view: 'grid' }))}
+                >
+                  Grid
+                </button>
+                <button
+                  className={'p-seg-btn' + (view === 'list' ? ' on' : '')}
+                  onClick={async () => setState(await api.setPanelPrefs(catId, { view: 'list' }))}
+                >
+                  List
+                </button>
+              </div>
+            </div>
+            {(pp.customW || pp.customH) && (
+              <button
+                className="p-reset-btn"
+                onClick={async () => setState(await api.setPanelPrefs(catId, { customW: null, customH: null }))}
+              >
+                Reset size to default
+              </button>
+            )}
+          </div>
+        )}
 
         {!collapsed && isHub && (
           <nav className="hub-tabs" aria-label="Categories">
@@ -282,6 +368,22 @@ export default function Panel({ catId }) {
             )}
           </div>
         )}
+
+        {/* Bottom-right Corner Resize Grip */}
+        <div
+          className="p-resize-grip"
+          title="Drag to resize panel"
+          onPointerDown={onResizeDown}
+          onPointerMove={onResizeMove}
+          onPointerUp={onResizeUp}
+          onPointerCancel={onResizeUp}
+        >
+          <svg viewBox="0 0 10 10" width="10" height="10">
+            <line x1="8" y1="2" x2="2" y2="8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            <line x1="9" y1="5" x2="5" y2="9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            <line x1="9" y1="8" x2="8" y2="9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          </svg>
+        </div>
       </div>
     </div>
   );

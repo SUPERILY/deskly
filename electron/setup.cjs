@@ -58,6 +58,8 @@ function cleanPanelPrefs(pp) {
     if (['grid', 'list'].includes(v.view)) c.view = v.view;
     if (['comfortable', 'compact', 'mini'].includes(v.density)) c.density = v.density;
     if (bool(v.collapsed)) c.collapsed = v.collapsed;
+    if (num(v.customW, 100, 2000)) c.customW = Math.round(v.customW);
+    if (num(v.customH, 80, 1600)) c.customH = Math.round(v.customH);
     if (Object.keys(c).length) out[id] = c;
   }
   return out;

@@ -120,6 +120,7 @@ contextBridge.exposeInMainWorld('deskly', {
   setAutostart: (on) => call('setAutostart', on),
   resetPanels: () => call('resetPanels'),
   panelDrag: (phase, sx, sy) => ipcRenderer.send('deskly:panelDrag', phase, sx, sy),
+  panelResize: (phase, sx, sy) => ipcRenderer.send('deskly:panelResize', phase, sx, sy),
   openMain: (catId) => ipcRenderer.send('deskly:openMain', catId),
 
   onChanged: (cb) => listen('deskly:changed', () => cb()),
