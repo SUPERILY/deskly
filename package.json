@@ -1,6 +1,6 @@
 {
   "name": "deskly",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Deskly - a beautiful desktop organiser for Windows",
   "main": "electron/main.cjs",
   "author": "Ilyess Hassani",
