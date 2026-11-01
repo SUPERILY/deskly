@@ -1,0 +1,231 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowUpRight, ChevronDown, ChevronUp, FolderOpen, ShieldCheck, Power, Eye } from 'lucide-react';
+import { api } from './api.js';
+import { CatIcon } from './icons.jsx';
+import { SysWidget, DevWidget, ProjectsWidget, RecentWidget, ClockWidget } from './widgets/Widgets.jsx';
+
+const WIDGET_PAGE = { w_sys: 'performance', w_dev: 'performance', w_projects: 'apps', w_recent: 'apps', w_clock: 'scenes' };
+
+const byName = (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+
+// Must match DENS in electron/panels.cjs: keeps each window and its card the same size.
+const DENS = {
+  comfortable: { hubCols: 4, cols: (n) => (n <= 2 ? 2 : n <= 6 ? 3 : 4) },
+  compact: { hubCols: 5, cols: (n) => (n <= 3 ? 3 : n <= 8 ? 4 : 5) },
+  mini: { hubCols: 8, cols: (n) => (n <= 4 ? 4 : n <= 12 ? 6 : 8) },
+};
+
+const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
+
+function Icon({ item }) {
+  if (item.icon) return <img src={item.icon} alt="" draggable={false} />;
+  const l = (item.name.match(/[A-Za-z0-9]/) || ['?'])[0].toUpperCase();
+  return <span className="p-fallback">{l}</span>;
+}
+
+export default function Panel({ catId }) {
+  const [state, setState] = useState(null);
+  const [running, setRunning] = useState(new Set());
+  const [launching, setLaunching] = useState(null);
+  const [tab, setTab] = useState(() => lsGet('deskly.hubTab'));
+  const dragging = useRef(false);
+  const raf = useRef(0);
+
+  const refresh = useCallback(async () => {
+    const s = await api.scan();
+    setState(s);
+    setRunning(new Set(s.running || []));
+  }, []);
+
+  useEffect(() => {
+    refresh();
+    const offChanged = api.onChanged?.(refresh);
+    const offRunning = api.onRunning?.((keys) => setRunning(new Set(keys)));
+    return () => { offChanged?.(); offRunning?.(); };
+  }, [refresh]);
+
+  const isHub = catId === 'hub';
+  const tabIds = (state && state.hubTabs) || [];
+  const activeTab = isHub ? (tabIds.includes(tab) ? tab : tabIds[0]) : null;
+  const contentId = isHub ? activeTab : catId; // the category (or "quick") whose tiles are shown
+
+  const isQuick = contentId === 'quick';
+  const wd = state && !isHub && (state.widgetDefs || []).find((w) => w.id === catId);
+  const base = state
+    ? wd || (isQuick ? state.quick : state.categories.find((c) => c.id === contentId))
+    : null;
+  const pp = (state && state.panelPrefs && state.panelPrefs[catId]) || {};
+  const cp = (state && state.panelPrefs && state.panelPrefs[contentId]) || {}; // look of the shown category
+
+  const items = useMemo(() => {
+    if (!state || !base || wd) return [];
+    if (isQuick) {
+      const byKey = new Map(state.items.map((i) => [i.key, i]));
+      return state.quick.keys.map((k) => byKey.get(k)).filter(Boolean);
+    }
+    return state.items.filter((i) => i.category === contentId).sort(byName);
+  }, [state, base, isQuick, wd, contentId]);
+
+  if (!state || !base) return null;
+
+  const prefs = state.prefs || {};
+  const color = (isHub ? cp.color : pp.color) || base.color;
+  const name = (isHub ? cp.name : pp.name) || base.name;
+  const view = !isHub && pp.view === 'list' ? 'list' : 'grid';
+  const density = DENS[pp.density || prefs.density] ? pp.density || prefs.density : 'compact';
+  const D = DENS[density];
+  const cols = isHub ? D.hubCols : D.cols(items.length);
+  // folded by you, or automatically because everything would not otherwise fit on screen
+  const autoFolded = (state.autoCollapsed || []).includes(catId);
+  const collapsed = pp.collapsed === false ? false : !!pp.collapsed || autoFolded;
+  const locked = !!prefs.panelsLocked;
+  const showRunning = prefs.showRunning !== false;
+  const op = Math.min(1, Math.max(0.3, prefs.panelOpacity ?? 0.9));
+
+  const open = async (item) => {
+    setLaunching(item.key);
+    setTimeout(() => setLaunching(null), 600);
+    await api.open(item.path, item.key);
+  };
+
+  const pickTab = (id) => {
+    setTab(id);
+    lsSet('deskly.hubTab', id);
+  };
+
+  // `false` is stored on purpose: it tells the auto-fit "the user wants this one open".
+  const toggleFold = async () => setState(await api.setPanelPrefs(catId, { collapsed: !collapsed }));
+
+  const onDown = (e) => {
+    if (locked || e.button !== 0 || e.target.closest('button')) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    dragging.current = true;
+    api.panelDrag('start', e.screenX, e.screenY);
+  };
+  const onMove = (e) => {
+    if (!dragging.current) return;
+    const { screenX, screenY } = e;
+    cancelAnimationFrame(raf.current);
+    raf.current = requestAnimationFrame(() => api.panelDrag('move', screenX, screenY));
+  };
+  const onUp = (e) => {
+    if (!dragging.current) return;
+    dragging.current = false;
+    cancelAnimationFrame(raf.current);
+    api.panelDrag('end', e.screenX, e.screenY);
+  };
+
+  const badges = (it) => (
+    <>
+      {showRunning && running.has(it.key) && <i className="p-run" title="Running" />}
+      {it.isNew && <b className="p-new" title="Added recently" />}
+    </>
+  );
+
+  // Hover mini-toolbar: show in folder, run as administrator, close the app, peek inside a folder.
+  const tools = (it) => {
+    if (density === 'mini') return null;
+    const isRunning = showRunning && running.has(it.key) && it.exe;
+    const real = !it.lib && it.kind !== 'special';
+    const folder = it.isFolder;
+    const stop = (fn) => (e) => { e.stopPropagation(); e.preventDefault(); fn(); };
+    return (
+      <span className="p-tools">
+        {folder && <span className="p-tool" role="button" title="Peek inside" onClick={stop(() => api.peekFolder(it.kind === 'dir' ? it.path : it.target))}><Eye size={12} /></span>}
+        {real && <span className="p-tool" role="button" title="Show in folder" onClick={stop(() => api.reveal(it.path))}><FolderOpen size={12} /></span>}
+        {real && !folder && it.kind === 'shortcut' && <span className="p-tool" role="button" title="Run as administrator" onClick={stop(() => api.runAsAdmin(it.path))}><ShieldCheck size={12} /></span>}
+        {isRunning && <span className="p-tool warn" role="button" title="Close this app" onClick={stop(() => api.closeApp(it.key))}><Power size={12} /></span>}
+      </span>
+    );
+  };
+
+  return (
+    <div
+      className={`p-win d-${density}` + (collapsed ? ' collapsed' : '')}
+      style={{ '--c': color, '--cols': cols, '--op': op }}
+    >
+      <div className="p-card">
+        <header
+          className={'p-head' + (locked ? ' locked' : '')}
+          onPointerDown={onDown}
+          onPointerMove={onMove}
+          onPointerUp={onUp}
+          onPointerCancel={onUp}
+          onDoubleClick={(e) => { if (!e.target.closest('button')) toggleFold(); }}
+        >
+          <span className="p-chip"><CatIcon name={base.icon} size={16} /></span>
+          <span className="p-title">{name}</span>
+          {!wd && <span className="p-count">{items.length}</span>}
+          {wd && <span className="p-spacer" />}
+          <button className="p-btn" title={collapsed ? 'Expand' : 'Collapse'} aria-label={collapsed ? 'Expand' : 'Collapse'} onClick={toggleFold}>
+            {collapsed ? <ChevronDown size={15} /> : <ChevronUp size={15} />}
+          </button>
+          <button className="p-btn" title="Open in Deskly" aria-label="Open in Deskly" onClick={() => api.openMain(wd ? WIDGET_PAGE[catId] : isQuick || isHub ? (isHub && !isQuick ? contentId : 'all') : catId)}>
+            <ArrowUpRight size={15} />
+          </button>
+        </header>
+
+        {!collapsed && isHub && (
+          <nav className="hub-tabs" aria-label="Categories">
+            {tabIds.map((id) => {
+              const t = id === 'quick' ? state.quick : state.categories.find((c) => c.id === id);
+              if (!t) return null;
+              const tc = (state.panelPrefs && state.panelPrefs[id] && state.panelPrefs[id].color) || t.color;
+              return (
+                <button key={id} className={'hub-tab' + (id === activeTab ? ' on' : '')} style={{ '--tc': tc }} title={(state.panelPrefs?.[id]?.name) || t.name} onClick={() => pickTab(id)}>
+                  <CatIcon name={t.icon} size={15} />
+                </button>
+              );
+            })}
+          </nav>
+        )}
+
+        {!collapsed && (
+          <div className="p-body">
+            {wd ? (
+              <>
+                {catId === 'w_sys' && <SysWidget onOpen={() => api.openMain('performance')} />}
+                {catId === 'w_dev' && <DevWidget />}
+                {catId === 'w_projects' && <ProjectsWidget />}
+                {catId === 'w_recent' && <RecentWidget />}
+                {catId === 'w_clock' && <ClockWidget state={state} />}
+              </>
+            ) : view === 'grid' ? (
+              <div className="p-grid">
+                {items.map((it, i) => (
+                  <button
+                    key={it.key}
+                    className={'p-tile' + (launching === it.key ? ' launching' : '')}
+                    style={{ '--i': Math.min(i, 20) }}
+                    title={density === 'mini' ? it.name : it.target || it.url || it.name}
+                    onClick={() => open(it)}
+                  >
+                    {tools(it)}
+                    <span className="p-icon"><Icon item={it} />{badges(it)}</span>
+                    {density !== 'mini' && <span className="p-name">{it.name}</span>}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="p-list">
+                {items.map((it, i) => (
+                  <button
+                    key={it.key}
+                    className={'p-row' + (launching === it.key ? ' launching' : '')}
+                    style={{ '--i': Math.min(i, 20) }}
+                    title={it.target || it.url || it.name}
+                    onClick={() => open(it)}
+                  >
+                    <span className="p-icon sm"><Icon item={it} />{badges(it)}</span>
+                    <span className="p-row-name">{it.name}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

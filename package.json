@@ -1,0 +1,78 @@
+{
+  "name": "deskly",
+  "version": "2.0.0",
+  "description": "Deskly - a beautiful desktop organiser for Windows",
+  "main": "electron/main.cjs",
+  "author": "Ilyess Hassani",
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "dev": "concurrently -k \"vite\" \"wait-on tcp:5173 && cross-env VITE_DEV_URL=http://localhost:5173 electron .\"",
+    "build": "vite build",
+    "start": "vite build && electron .",
+    "selftest": "electron . --selftest",
+    "icon": "node scripts/make-icon.cjs",
+    "dist": "vite build && electron-builder --win nsis portable --publish never"
+  },
+  "build": {
+    "appId": "com.ilyess.deskly",
+    "productName": "Deskly",
+    "files": [
+      "dist/**",
+      "electron/**",
+      "build/icon.png",
+      "package.json",
+      "!**/node_modules/koffi/build/koffi/{darwin*,linux*,freebsd*,openbsd*,musl*,win32_ia32,win32_arm64}/**",
+      "!**/node_modules/koffi/{doc,vendor}/**"
+    ],
+    "asarUnpack": [
+      "electron/*.ps1",
+      "**/node_modules/koffi/build/koffi/win32_x64/**"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "build/icon.png",
+      "artifactName": "Deskly-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": false,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Deskly",
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "Deskly-Setup-${version}.${ext}"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "SUPERILY",
+        "repo": "deskly"
+      }
+    ],
+    "directories": {
+      "output": "release"
+    }
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.1.2",
+    "concurrently": "^10.0.6",
+    "cross-env": "^10.1.0",
+    "electron": "^45.2.1",
+    "electron-builder": "^26.18.0",
+    "lucide-react": "^1.66.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "vite": "^8.3.5",
+    "wait-on": "^9.5.1"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.11",
+    "koffi": "^3.3.6"
+  }
+}
